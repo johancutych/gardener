@@ -1,7 +1,7 @@
 {
   "name": "gardener-context",
   "productName": "Gardener",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "🪴 Company context clipboard tool - pull Context.md from Git, copy with one click",
   "type": "module",
   "main": "src/index.js",
