@@ -208,4 +208,56 @@ program
     console.log(chalk.dim('Repo cloned to:'), '~/.gardener/repo/');
   });
 
+// ============ AUTOSTART ============
+program
+  .command('autostart')
+  .description('Enable or disable auto-start on login')
+  .option('--enable', 'Enable auto-start')
+  .option('--disable', 'Disable auto-start')
+  .action(async (options) => {
+    const { writeFileSync, unlinkSync, existsSync: fsExists } = await import('fs');
+    const { homedir } = await import('os');
+    const plistPath = `${homedir()}/Library/LaunchAgents/com.gardener.app.plist`;
+
+    const electronPath = join(__dirname, '..', 'node_modules', '.bin', 'electron');
+    const appPath = join(__dirname, '..', 'src', 'index.js');
+
+    const plistContent = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.gardener.app</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${electronPath}</string>
+        <string>${appPath}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>`;
+
+    if (options.enable) {
+      writeFileSync(plistPath, plistContent);
+      console.log(chalk.green('✓ Auto-start enabled. Gardener will start on login.'));
+    } else if (options.disable) {
+      if (fsExists(plistPath)) {
+        unlinkSync(plistPath);
+        console.log(chalk.green('✓ Auto-start disabled.'));
+      } else {
+        console.log(chalk.yellow('Auto-start was not enabled.'));
+      }
+    } else {
+      // Show current status
+      if (fsExists(plistPath)) {
+        console.log(chalk.green('Auto-start: enabled'));
+        console.log(chalk.dim('To disable: gardener autostart --disable'));
+      } else {
+        console.log(chalk.yellow('Auto-start: disabled'));
+        console.log(chalk.dim('To enable: gardener autostart --enable'));
+      }
+    }
+  });
+
 program.parse();
