@@ -1,6 +1,6 @@
 {
   "name": "gardener-context",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "🪴 Company context clipboard tool - pull Context.md from Git, copy with one click",
   "type": "module",
   "main": "src/index.js",
