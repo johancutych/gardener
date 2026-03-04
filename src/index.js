@@ -1,16 +1,20 @@
 import { app, Menu, Tray, clipboard, Notification, nativeImage } from 'electron';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 import { getContextPath, getLastSync, setLastSync, isConfigured, getContextFile, setContextFile } from './config.js';
 import { pullRepo, isRepoCloned, findMarkdownFiles } from './git.js';
 
+// Max file size for clipboard operations (1MB)
+const MAX_FILE_SIZE = 1024 * 1024;
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 let tray = null;
 let appIcon = null;
+let syncUpdateInterval = null;
 
 // Load the app icon
 const iconPath = join(__dirname, '..', 'assets', 'icon.png');
@@ -38,8 +42,6 @@ function updateLastSyncDisplay() {
 
 function showNotification(title, body) {
   if (Notification.isSupported()) {
-    // Don't set icon - let macOS use the app icon only
-    // silent: true to disable notification sound
     new Notification({ title, body, silent: true }).show();
   }
 }
@@ -54,6 +56,12 @@ async function copyContext() {
   }
 
   try {
+    const fileSize = statSync(contextPath).size;
+    if (fileSize > MAX_FILE_SIZE) {
+      showNotification('Gardener', `File too large (${(fileSize / 1024 / 1024).toFixed(2)}MB). Max 1MB.`);
+      return;
+    }
+
     const content = readFileSync(contextPath, 'utf8');
     clipboard.writeText(content);
     showNotification('🪴 Gardener', `${contextFile} copied!`);
@@ -81,13 +89,13 @@ function updateMenu() {
   }
 }
 
-function getContextMenu() {
+async function getContextMenu() {
   updateLastSyncDisplay();
 
   const currentFile = getContextFile();
-  const mdFiles = findMarkdownFiles();
+  const mdFiles = await findMarkdownFiles();
 
-  // Build markdown files submenu
+  // Build markdown file menu items
   const fileMenuItems = mdFiles.length > 0 ? mdFiles.map(file => ({
     label: file,
     type: 'checkbox',
@@ -108,10 +116,7 @@ function getContextMenu() {
       click: refreshRepo
     },
     { type: 'separator' },
-    {
-      label: `📄 ${currentFile}`,
-      submenu: fileMenuItems
-    },
+    ...fileMenuItems,
     { type: 'separator' },
     {
       label: `✓ Synced: ${lastSyncDisplay}`,
@@ -148,8 +153,8 @@ app.whenReady().then(async () => {
   });
 
   // Right click = show menu
-  tray.on('right-click', () => {
-    tray.popUpContextMenu(getContextMenu());
+  tray.on('right-click', async () => {
+    tray.popUpContextMenu(await getContextMenu());
   });
 
   console.log('🪴 Gardener is ready');
@@ -167,5 +172,13 @@ app.whenReady().then(async () => {
   }
 
   // Update sync display periodically
-  setInterval(() => updateLastSyncDisplay(), 60000);
+  syncUpdateInterval = setInterval(() => updateLastSyncDisplay(), 60000);
+});
+
+// Clean up on quit
+app.on('before-quit', () => {
+  if (syncUpdateInterval) {
+    clearInterval(syncUpdateInterval);
+    syncUpdateInterval = null;
+  }
 });

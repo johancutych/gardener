@@ -32,6 +32,35 @@ const __dirname = dirname(__filename);
 const require = createRequire(import.meta.url);
 const pkg = require('../package.json');
 
+// Max file size for clipboard operations (1MB)
+const MAX_FILE_SIZE = 1024 * 1024;
+
+// Get electron binary path
+function getElectronPath() {
+  return join(__dirname, '..', 'node_modules', '.bin', 'electron');
+}
+
+// Get app path
+function getAppPath() {
+  return join(__dirname, '..', 'src', 'index.js');
+}
+
+// Ensure configuration is set up
+function ensureConfigured(message = 'Not configured. Run `gardener setup` first.') {
+  if (!isConfigured()) {
+    console.log(chalk.yellow(message));
+    process.exit(1);
+  }
+}
+
+// Ensure repository is cloned
+function ensureRepoCloned(message = 'Repository not found. Run `gardener setup` first.') {
+  if (!isRepoCloned()) {
+    console.log(chalk.yellow(message));
+    process.exit(1);
+  }
+}
+
 program
   .name('gardener')
   .description('🪴 Company context clipboard tool')
@@ -94,19 +123,19 @@ program
 program
   .command('start')
   .description('Start the menubar app')
-  .action(async () => {
-    if (!isConfigured()) {
-      console.log(chalk.yellow('Not configured. Run `gardener setup` first.'));
+  .action(() => {
+    ensureConfigured();
+
+    const electronPath = getElectronPath();
+    const appPath = getAppPath();
+
+    if (!existsSync(electronPath)) {
+      console.log(chalk.red('✗ Electron binary not found. Run `npm install` in the gardener directory.'));
       process.exit(1);
     }
 
     console.log(chalk.green('🪴 Starting Gardener menubar app...'));
 
-    // Find electron binary
-    const electronPath = join(__dirname, '..', 'node_modules', '.bin', 'electron');
-    const appPath = join(__dirname, '..', 'src', 'index.js');
-
-    // Spawn electron as a detached process
     const child = spawn(electronPath, [appPath], {
       detached: true,
       stdio: 'ignore',
@@ -123,10 +152,7 @@ program
   .command('copy')
   .description('Copy context to clipboard')
   .action(async () => {
-    if (!isConfigured()) {
-      console.log(chalk.yellow('Not configured. Run `gardener setup` first.'));
-      process.exit(1);
-    }
+    ensureConfigured();
 
     const contextPath = getContextPath();
     if (!existsSync(contextPath)) {
@@ -135,6 +161,14 @@ program
     }
 
     try {
+      const { statSync } = await import('fs');
+      const fileSize = statSync(contextPath).size;
+
+      if (fileSize > MAX_FILE_SIZE) {
+        console.log(chalk.red(`✗ File too large (${(fileSize / 1024 / 1024).toFixed(2)}MB). Max size is 1MB.`));
+        process.exit(1);
+      }
+
       const content = readFileSync(contextPath, 'utf8');
       await clipboard.write(content);
       console.log(chalk.green('✓ Context copied to clipboard!'));
@@ -150,10 +184,7 @@ program
   .alias('pull')
   .description('Pull latest from remote')
   .action(async () => {
-    if (!isRepoCloned()) {
-      console.log(chalk.yellow('Repository not found. Run `gardener setup` first.'));
-      process.exit(1);
-    }
+    ensureRepoCloned();
 
     console.log(chalk.dim('Pulling latest changes...'));
 
@@ -215,14 +246,35 @@ program
   .option('--enable', 'Enable auto-start')
   .option('--disable', 'Disable auto-start')
   .action(async (options) => {
-    const { writeFileSync, unlinkSync, existsSync: fsExists } = await import('fs');
-    const { homedir } = await import('os');
-    const plistPath = `${homedir()}/Library/LaunchAgents/com.gardener.app.plist`;
+    // Check platform
+    if (process.platform !== 'darwin') {
+      console.log(chalk.yellow('Auto-start is only supported on macOS.'));
+      return;
+    }
 
-    const electronPath = join(__dirname, '..', 'node_modules', '.bin', 'electron');
-    const appPath = join(__dirname, '..', 'src', 'index.js');
+    try {
+      const { writeFileSync, unlinkSync, mkdirSync, existsSync: fsExists } = await import('fs');
+      const { homedir } = await import('os');
 
-    const plistContent = `<?xml version="1.0" encoding="UTF-8"?>
+      const launchAgentsDir = `${homedir()}/Library/LaunchAgents`;
+      const plistPath = `${launchAgentsDir}/com.gardener.app.plist`;
+
+      const electronPath = getElectronPath();
+      const appPath = getAppPath();
+
+      if (options.enable) {
+        // Validate electron binary exists
+        if (!fsExists(electronPath)) {
+          console.log(chalk.red('✗ Electron binary not found. Run `npm install` in the gardener directory.'));
+          process.exit(1);
+        }
+
+        // Ensure LaunchAgents directory exists
+        if (!fsExists(launchAgentsDir)) {
+          mkdirSync(launchAgentsDir, { recursive: true });
+        }
+
+        const plistContent = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -238,25 +290,28 @@ program
 </dict>
 </plist>`;
 
-    if (options.enable) {
-      writeFileSync(plistPath, plistContent);
-      console.log(chalk.green('✓ Auto-start enabled. Gardener will start on login.'));
-    } else if (options.disable) {
-      if (fsExists(plistPath)) {
-        unlinkSync(plistPath);
-        console.log(chalk.green('✓ Auto-start disabled.'));
+        writeFileSync(plistPath, plistContent);
+        console.log(chalk.green('✓ Auto-start enabled. Gardener will start on login.'));
+      } else if (options.disable) {
+        if (fsExists(plistPath)) {
+          unlinkSync(plistPath);
+          console.log(chalk.green('✓ Auto-start disabled.'));
+        } else {
+          console.log(chalk.yellow('Auto-start was not enabled.'));
+        }
       } else {
-        console.log(chalk.yellow('Auto-start was not enabled.'));
+        // Show current status
+        if (fsExists(plistPath)) {
+          console.log(chalk.green('Auto-start: enabled'));
+          console.log(chalk.dim('To disable: gardener autostart --disable'));
+        } else {
+          console.log(chalk.yellow('Auto-start: disabled'));
+          console.log(chalk.dim('To enable: gardener autostart --enable'));
+        }
       }
-    } else {
-      // Show current status
-      if (fsExists(plistPath)) {
-        console.log(chalk.green('Auto-start: enabled'));
-        console.log(chalk.dim('To disable: gardener autostart --disable'));
-      } else {
-        console.log(chalk.yellow('Auto-start: disabled'));
-        console.log(chalk.dim('To enable: gardener autostart --enable'));
-      }
+    } catch (err) {
+      console.error(chalk.red('✗ Auto-start operation failed:'), err.message);
+      process.exit(1);
     }
   });
 

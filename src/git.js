@@ -1,5 +1,6 @@
 import simpleGit from 'simple-git';
-import { existsSync, mkdirSync, readdirSync, statSync } from 'fs';
+import { existsSync, mkdirSync } from 'fs';
+import { readdir, stat } from 'fs/promises';
 import { join, relative } from 'path';
 import { GARDENER_DIR, REPO_DIR, setLastSync } from './config.js';
 
@@ -77,17 +78,17 @@ export async function getStatus() {
 
 /**
  * Find all markdown files in the repo
- * @returns {string[]} Array of relative paths to .md files
+ * @returns {Promise<string[]>} Array of relative paths to .md files
  */
-export function findMarkdownFiles() {
+export async function findMarkdownFiles() {
   if (!isRepoCloned()) {
     return [];
   }
 
   const mdFiles = [];
 
-  function scanDir(dir) {
-    const entries = readdirSync(dir);
+  async function scanDir(dir) {
+    const entries = await readdir(dir);
     for (const entry of entries) {
       // Skip hidden files/folders and node_modules
       if (entry.startsWith('.') || entry === 'node_modules') {
@@ -95,16 +96,16 @@ export function findMarkdownFiles() {
       }
 
       const fullPath = join(dir, entry);
-      const stat = statSync(fullPath);
+      const fileStat = await stat(fullPath);
 
-      if (stat.isDirectory()) {
-        scanDir(fullPath);
+      if (fileStat.isDirectory()) {
+        await scanDir(fullPath);
       } else if (entry.endsWith('.md')) {
         mdFiles.push(relative(REPO_DIR, fullPath));
       }
     }
   }
 
-  scanDir(REPO_DIR);
+  await scanDir(REPO_DIR);
   return mdFiles.sort();
 }
