@@ -1,5 +1,6 @@
 {
   "name": "gardener-context",
+  "productName": "Gardener",
   "version": "1.0.3",
   "description": "🪴 Company context clipboard tool - pull Context.md from Git, copy with one click",
   "type": "module",
@@ -9,7 +10,22 @@
   },
   "scripts": {
     "start": "electron src/index.js",
-    "cli": "node bin/cli.js"
+    "cli": "node bin/cli.js",
+    "build": "electron-builder --mac --dir",
+    "dist": "electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.gardener.app",
+    "productName": "Gardener",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "assets/icon.icns",
+      "target": "dir"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*"
+    ]
   },
   "keywords": [
     "context",
@@ -26,10 +42,11 @@
     "clipboardy": "^4.0.0",
     "commander": "^12.0.0",
     "conf": "^12.0.0",
-    "electron": "^35.0.0",
     "simple-git": "^3.22.0"
   },
   "devDependencies": {
-    "canvas": "^3.2.1"
+    "canvas": "^3.2.1",
+    "electron": "^35.0.0",
+    "electron-builder": "^26.8.1"
   }
 }

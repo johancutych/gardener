@@ -35,7 +35,13 @@ const pkg = require('../package.json');
 // Max file size for clipboard operations (1MB)
 const MAX_FILE_SIZE = 1024 * 1024;
 
-// Get electron binary path
+// Get built app path (if available)
+function getBuiltAppPath() {
+  const appPath = join(__dirname, '..', 'dist', 'mac-arm64', 'Gardener.app');
+  return existsSync(appPath) ? appPath : null;
+}
+
+// Get electron binary path (fallback)
 function getElectronPath() {
   return join(__dirname, '..', 'node_modules', '.bin', 'electron');
 }
@@ -126,22 +132,34 @@ program
   .action(() => {
     ensureConfigured();
 
-    const electronPath = getElectronPath();
-    const appPath = getAppPath();
+    const builtApp = getBuiltAppPath();
 
-    if (!existsSync(electronPath)) {
-      console.log(chalk.red('✗ Electron binary not found. Run `npm install` in the gardener directory.'));
-      process.exit(1);
+    if (builtApp) {
+      // Use the built app
+      console.log(chalk.green('🪴 Starting Gardener...'));
+      const child = spawn('open', [builtApp], {
+        detached: true,
+        stdio: 'ignore'
+      });
+      child.unref();
+    } else {
+      // Fall back to electron binary
+      const electronPath = getElectronPath();
+      const appPath = getAppPath();
+
+      if (!existsSync(electronPath)) {
+        console.log(chalk.red('✗ App not found. Run `npm run build` in the gardener directory.'));
+        process.exit(1);
+      }
+
+      console.log(chalk.green('🪴 Starting Gardener (dev mode)...'));
+      const child = spawn(electronPath, [appPath], {
+        detached: true,
+        stdio: 'ignore',
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '' }
+      });
+      child.unref();
     }
-
-    console.log(chalk.green('🪴 Starting Gardener menubar app...'));
-
-    const child = spawn(electronPath, [appPath], {
-      detached: true,
-      stdio: 'ignore',
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '' }
-    });
-    child.unref();
 
     console.log(chalk.dim('Gardener is now running in your menubar.'));
     process.exit(0);
@@ -263,18 +281,41 @@ program
       const appPath = getAppPath();
 
       if (options.enable) {
-        // Validate electron binary exists
-        if (!fsExists(electronPath)) {
-          console.log(chalk.red('✗ Electron binary not found. Run `npm install` in the gardener directory.'));
-          process.exit(1);
-        }
+        const builtApp = getBuiltAppPath();
 
         // Ensure LaunchAgents directory exists
         if (!fsExists(launchAgentsDir)) {
           mkdirSync(launchAgentsDir, { recursive: true });
         }
 
-        const plistContent = `<?xml version="1.0" encoding="UTF-8"?>
+        let plistContent;
+
+        if (builtApp) {
+          // Use the built app (cleaner, shows "Gardener" in macOS)
+          plistContent = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.gardener.app</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/open</string>
+        <string>${builtApp}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>`;
+        } else {
+          // Fall back to electron binary (requires PATH)
+          if (!fsExists(electronPath)) {
+            console.log(chalk.red('✗ App not found. Run `npm run build` in the gardener directory.'));
+            process.exit(1);
+          }
+
+          const currentPath = process.env.PATH || '/usr/bin:/bin:/usr/sbin:/sbin';
+          plistContent = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -285,10 +326,16 @@ program
         <string>${electronPath}</string>
         <string>${appPath}</string>
     </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>${currentPath}</string>
+    </dict>
     <key>RunAtLoad</key>
     <true/>
 </dict>
 </plist>`;
+        }
 
         writeFileSync(plistPath, plistContent);
         console.log(chalk.green('✓ Auto-start enabled. Gardener will start on login.'));
