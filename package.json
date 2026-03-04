@@ -1,5 +1,5 @@
 {
-  "name": "gardener",
+  "name": "gardener-context",
   "version": "1.0.0",
   "description": "🪴 Company context clipboard tool - pull Context.md from Git, copy with one click",
   "type": "module",
