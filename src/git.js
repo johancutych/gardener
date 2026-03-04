@@ -1,5 +1,6 @@
 import simpleGit from 'simple-git';
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, statSync } from 'fs';
+import { join, relative } from 'path';
 import { GARDENER_DIR, REPO_DIR, setLastSync } from './config.js';
 
 /**
@@ -72,4 +73,38 @@ export async function getStatus() {
       date: log.latest.date
     } : null
   };
+}
+
+/**
+ * Find all markdown files in the repo
+ * @returns {string[]} Array of relative paths to .md files
+ */
+export function findMarkdownFiles() {
+  if (!isRepoCloned()) {
+    return [];
+  }
+
+  const mdFiles = [];
+
+  function scanDir(dir) {
+    const entries = readdirSync(dir);
+    for (const entry of entries) {
+      // Skip hidden files/folders and node_modules
+      if (entry.startsWith('.') || entry === 'node_modules') {
+        continue;
+      }
+
+      const fullPath = join(dir, entry);
+      const stat = statSync(fullPath);
+
+      if (stat.isDirectory()) {
+        scanDir(fullPath);
+      } else if (entry.endsWith('.md')) {
+        mdFiles.push(relative(REPO_DIR, fullPath));
+      }
+    }
+  }
+
+  scanDir(REPO_DIR);
+  return mdFiles.sort();
 }

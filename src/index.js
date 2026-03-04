@@ -3,8 +3,8 @@ import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-import { getContextPath, getLastSync, setLastSync, isConfigured } from './config.js';
-import { pullRepo, isRepoCloned } from './git.js';
+import { getContextPath, getLastSync, setLastSync, isConfigured, getContextFile, setContextFile } from './config.js';
+import { pullRepo, isRepoCloned, findMarkdownFiles } from './git.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -38,26 +38,25 @@ function updateLastSyncDisplay() {
 
 function showNotification(title, body) {
   if (Notification.isSupported()) {
-    const options = { title, body };
-    if (appIcon) {
-      options.icon = appIcon;
-    }
-    new Notification(options).show();
+    // Don't set icon - let macOS use the app icon only
+    // silent: true to disable notification sound
+    new Notification({ title, body, silent: true }).show();
   }
 }
 
 async function copyContext() {
   const contextPath = getContextPath();
+  const contextFile = getContextFile();
 
   if (!existsSync(contextPath)) {
-    showNotification('Gardener', 'Context.md not found in repo');
+    showNotification('Gardener', `${contextFile} not found in repo`);
     return;
   }
 
   try {
     const content = readFileSync(contextPath, 'utf8');
     clipboard.writeText(content);
-    showNotification('🪴 Gardener', 'Context copied to clipboard!');
+    showNotification('🪴 Gardener', `${contextFile} copied!`);
   } catch (err) {
     showNotification('Gardener', `Error: ${err.message}`);
   }
@@ -75,13 +74,43 @@ async function refreshRepo() {
   }
 }
 
+function updateMenu() {
+  if (tray) {
+    const currentFile = getContextFile();
+    tray.setToolTip(`Click to copy ${currentFile} • Right-click for menu`);
+  }
+}
+
 function getContextMenu() {
   updateLastSyncDisplay();
+
+  const currentFile = getContextFile();
+  const mdFiles = findMarkdownFiles();
+
+  // Build markdown files submenu
+  const fileMenuItems = mdFiles.length > 0 ? mdFiles.map(file => ({
+    label: file,
+    type: 'checkbox',
+    checked: file === currentFile,
+    click: () => {
+      setContextFile(file);
+      updateMenu();
+      showNotification('🪴 Gardener', `Selected: ${file}`);
+    }
+  })) : [{
+    label: 'No .md files found',
+    enabled: false
+  }];
 
   return Menu.buildFromTemplate([
     {
       label: '↻ Refresh',
       click: refreshRepo
+    },
+    { type: 'separator' },
+    {
+      label: `📄 ${currentFile}`,
+      submenu: fileMenuItems
     },
     { type: 'separator' },
     {
@@ -96,7 +125,10 @@ function getContextMenu() {
   ]);
 }
 
-// Set app icon (for notifications) and hide dock
+// Set app name and icon
+app.setName('Gardener');
+
+// Set dock icon before hiding (for notifications)
 if (appIcon && app.dock) {
   app.dock.setIcon(appIcon);
 }
@@ -108,7 +140,7 @@ app.whenReady().then(async () => {
 
   tray = new Tray(emptyIcon);
   tray.setTitle('🪴'); // This shows the emoji in the menubar!
-  tray.setToolTip('Click to copy context • Right-click for menu');
+  tray.setToolTip(`Click to copy ${getContextFile()} • Right-click for menu`);
 
   // Left click = copy context immediately
   tray.on('click', () => {
