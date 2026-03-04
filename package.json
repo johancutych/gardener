@@ -14,6 +14,12 @@
     "build": "electron-builder --mac --dir",
     "dist": "electron-builder --mac"
   },
+  "files": [
+    "bin/",
+    "src/",
+    "assets/icon.png",
+    "README.md"
+  ],
   "build": {
     "appId": "com.gardener.app",
     "productName": "Gardener",
@@ -42,11 +48,11 @@
     "clipboardy": "^4.0.0",
     "commander": "^12.0.0",
     "conf": "^12.0.0",
+    "electron": "^35.0.0",
     "simple-git": "^3.22.0"
   },
   "devDependencies": {
     "canvas": "^3.2.1",
-    "electron": "^35.0.0",
     "electron-builder": "^26.8.1"
   }
 }
