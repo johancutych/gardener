@@ -1,0 +1,6 @@
+.claude/
+.git/
+.gitignore
+scripts/
+*.log
+.DS_Store
